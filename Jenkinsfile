@@ -1,13 +1,17 @@
 pipeline {
 
-    agent any
+    agent any   // Run on any available Jenkins agent
 
     parameters {
+        // Select type of performance test
         choice(name: 'TEST_TYPE', choices: ['LOAD', 'STRESS', 'SPIKE'], description: 'Select Test Type')
+
+        // Select environment
         choice(name: 'ENV', choices: ['DEV', 'QA', 'PROD'], description: 'Select Environment')
     }
 
     environment {
+        // Git repository containing JMeter script
         PT_REPO = 'https://github.com/ManishaS1713/PTTypes_Jenkins.git'
     }
 
@@ -15,12 +19,14 @@ pipeline {
 
         stage('Clean Workspace') {
             steps {
+                // Clean previous build files
                 cleanWs()
             }
         }
 
         stage('Checkout Code') {
             steps {
+                // Pull code from GitHub repository
                 git branch: 'main',
                     url: "${PT_REPO}",
                     credentialsId: 'PT_PipelineToken'
@@ -30,6 +36,7 @@ pipeline {
         stage('Set Environment URL') {
             steps {
                 script {
+                    // Set HOST based on selected environment
                     if (params.ENV == 'DEV') {
                         env.HOST = "dev.prefscale.com"
                     }
@@ -40,6 +47,7 @@ pipeline {
                         env.HOST = "prefscale-frontend-9icy.onrender.com"
                     }
 
+                    // Print selected environment details
                     echo "Environment: ${params.ENV}"
                     echo "Host: ${env.HOST}"
                 }
@@ -50,22 +58,26 @@ pipeline {
             steps {
                 script {
 
+                    // Set load configuration based on test type
                     if (params.TEST_TYPE == 'LOAD') {
-                        env.THREADS = "50"
-                        env.RAMPUP = "10"
-                        env.DURATION = "300"
-                    }
+                        env.THREADS = "5"
+                        env.RAMPUP = "2"
+                        env.DURATION = "60"
+                    }    
                     else if (params.TEST_TYPE == 'STRESS') {
-                        env.THREADS = "200"
-                        env.RAMPUP = "20"
-                        env.DURATION = "600"
+                        // Set Stress Testing configuration
+                        env.THREADS = "20"
+                        env.RAMPUP = "5"
+                        env.DURATION = "60"
                     }
                     else {
-                        env.THREADS = "500"
+                        // SPIKE testing configuration
+                        env.THREADS = "25"
                         env.RAMPUP = "1"
-                        env.DURATION = "120"
+                        env.DURATION = "60"
                     }
 
+                    // Print configuration values
                     echo "Test Type: ${params.TEST_TYPE}"
                     echo "Threads: ${env.THREADS}"
                     echo "Ramp-up: ${env.RAMPUP}"
@@ -77,9 +89,11 @@ pipeline {
         stage('Run Performance Test') {
             steps {
                 bat """
+                REM Delete old result and report files if exist
                 IF EXIST PTTypes_Jenkins-result.jtl del PTTypes_Jenkins-result.jtl
                 IF EXIST PTTypes_Jenkins-report rmdir /s /q PTTypes_Jenkins-report
 
+                REM Execute JMeter in non-GUI mode
                 C:\\Jmeter\\apache-jmeter-5.6.3\\bin\\jmeter.bat -n ^
                 -t PTTypes_Jenkins.jmx ^
                 -Jthreads=${env.THREADS} ^
@@ -96,8 +110,10 @@ pipeline {
             steps {
                 script {
 
+                    // Declare variables
                     def TOTAL, SUCCESS, FAIL, AVG, TPS, ERRORPCT, SLA_STATUS
 
+                    // Run PowerShell to calculate metrics from JMeter result file
                     def raw = powershell(
                         returnStdout: true,
                         script: '''
@@ -126,8 +142,10 @@ pipeline {
                         '''
                     ).trim()
 
+                    // Print raw output
                     echo raw
 
+                    // Parse output into variables
                     def lines = raw.split("\\r?\\n")
 
                     TOTAL = lines.find { it.startsWith("TOTAL=") }?.split("=")[1]
@@ -137,12 +155,13 @@ pipeline {
                     TPS = lines.find { it.startsWith("TPS=") }?.split("=")[1]
                     ERRORPCT = lines.find { it.startsWith("ERRORPCT=") }?.split("=")[1]
 
+                    // SLA validation logic
                     SLA_STATUS = "PASS"
                     if ((AVG ?: "0").toFloat() > 1000 || (ERRORPCT ?: "0").toFloat() > 1) {
                         SLA_STATUS = "FAIL"
                     }
 
-                    // Store globally for email stage
+                    // Store values globally for next stages (email)
                     env.TOTAL = TOTAL
                     env.SUCCESS = SUCCESS
                     env.FAIL = FAIL
@@ -156,6 +175,7 @@ pipeline {
 
         stage('Publish Report') {
             steps {
+                // Publish JMeter HTML report in Jenkins
                 publishHTML([
                     allowMissing: true,
                     reportDir: 'PTTypes_Jenkins-report',
@@ -170,6 +190,7 @@ pipeline {
         stage('Send Email') {
             steps {
                 script {
+                    // Send email with performance summary
                     emailext(
                         subject: "Performance Test Result - ${env.SLA_STATUS}",
                         body: """
