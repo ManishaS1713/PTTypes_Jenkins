@@ -212,7 +212,7 @@ pipeline {
 <br>
 <a href="${BUILD_URL}">👉 View Full Report</a>
 """,
-                        to: 'manishas@ivavsys.com,team@company.com',
+                        to: 'manishas@ivavsys.com,nikhil@ivavsys.com,rutuja@ivavsys.com,bhavana@ivavsys.com,geeta@ivavsys.com',
                         mimeType: 'text/html'
                     )
                 }
